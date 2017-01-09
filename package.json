@@ -1,0 +1,32 @@
+{
+  "name": "x25519-workshop",
+  "version": "0.0.1",
+  "description": "Curve 25519 implemented in put JS ES2015",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "ava test/*.test.js --verbose",
+    "watch": "ava test/*.test.js --watch"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thesimj/x25519-workshop.git"
+  },
+  "keywords": [
+    "curve25519"
+  ],
+  "author": "Mykola Bubelich",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/thesimj/x25519-workshop/issues"
+  },
+  "homepage": "https://github.com/thesimj/x25519-workshop#readme",
+  "devDependencies": {
+    "ava": "^0.17.0"
+  },
+  "ava": {
+    "require": [
+      "babel-register"
+    ],
+    "babel": "inherit"
+  }
+}
