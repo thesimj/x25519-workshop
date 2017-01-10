@@ -5,92 +5,133 @@
  * License: MIT
  */
 
-export default class X25519 {
-    static BYTES = 'bytes';
-    static HEX = 'hex';
-    static BASE64 = 'base64';
 
-    _q = 57896044618658097711785492504343953926634992332820282019728792003956564819949;
-
-    /** private */
-    _secret = new Uint8Array(16);
-
+class X25519 {
     /**
+     * Default constructor
+     *
      * @private
      */
     constructor() {
+        this._secret = new ArrayBuffer(32);
     }
 
-    /**
+    /** Create instance
      *
      * @param {String} seed
-     * @returns {X25519}
+     * @return {X25519}
      */
     static create(seed) {
         const instance = new X25519();
-        instance._secret = new Uint8Array(X25519._hexToBytes(seed));
 
+        if (seed.length !== 64) {
+            throw new Error("Seed wrong length. Should be 64 hex string");
+        }
 
-        //
-        instance._secret[0]  &= 0xFFF8;
-        instance._secret[15] = (( instance._secret[15] & 0x7FFF ) | 0x4000) & 0x7FFF;
+        const _secret = X25519._hexToBytes(seed);
+        const _view = new Uint8Array(_secret);
+
+        // clamp //
+        _view[0] = _view[0] & 0xf8;
+        _view[31] = _view[31] & 0x7f | 0x40;
+
+        instance._secret = _secret;
 
         return instance;
     }
 
     /**
-     * Get Private(Secret) key
+     * Get secret key
      *
-     * @param {String} type
-     * @returns {Uint8Array | String}
+     * @return {String}
      */
-    getPrivate(type = X25519.BYTES) {
-        switch (type) {
-            case X25519.BYTES: {
-                return this._secret.slice(0);
-            }
+    getSecret() {
+        return X25519._bytesToHex(this._secret);
+    }
 
-            default: {
-                return X25519._bytesToHex(this._secret);
-            }
+
+    /**
+     *
+     * @param {ArrayBuffer} augent
+     * @param {ArrayBuffer} addend
+     * @return {ArrayBuffer}
+     * @private
+     */
+    _sum(augent, addend) {
+        // shout be the same size //
+        if (augent.byteLength !== 32 || addend.byteLength !== 32) {
+            throw new Error("Arguments in sum should have the same size of byte length.");
         }
+
+        const _view_augent = new Uint32Array(augent);
+        const _view_addend = new Uint32Array(addend);
+        const _view_sum = new Uint32Array(4);
+
+        _view_sum[0] = _view_augent[0] + _view_addend[0];
+        _view_sum[1] = _view_augent[1] + _view_addend[1];
+        _view_sum[2] = _view_augent[2] + _view_addend[2];
+        _view_sum[3] = _view_augent[3] + _view_addend[3];
+
+        return _view_sum.buffer;
     }
 
     /**
      *
-     * @param {Uint8Array} uint
+     * @param {ArrayBuffer} bytes
      * @returns {String}
      * @private
      */
-    static _bytesToHex(uint) {
-        return uint.reduce((carry, e) => {
-            const conv = e.toString(16);
-            const char = conv.length === 1 ? '0' + conv : conv;
-            return carry + char;
-        }, '');
+    static _bytesToHex(bytes) {
+        return new Uint8Array(bytes).reduce((carry, e) => {
+            // const hex = e.toString(16);
+            // const char = hex.length === 1 ? "0" + hex : hex;
+            return carry + ("00" + e.toString(16)).substr(-2, 2);
+        }, "");
     }
 
     /**
+     * Convert hex string to Bytes (ArrayBuffer)
      *
-     * @param {String} hex
-     * @return {Uint8Array}
+     * @param {String} hexi
+     * @return {ArrayBuffer}
      * @private
      */
-    static _hexToBytes(hex) {
-        const len = hex.length / 2;
+    static _hexToBytes(hexi) {
+        const len = hexi.length / 2;
 
         if (len % 2 !== 0) {
-            throw Error('Hex wrong length');
+            throw Error("Hex wrong length");
         }
 
-        const _array = [];
+        const _array = new ArrayBuffer(len);
+        const _view = new Uint8Array(_array);
+        let _view_index = 0;
 
-        for (let start = 0; start < hex.length; start += 2) {
-            const number = parseInt(hex.substr(start, 2), 16);
-            _array.push(number);
-
+        for (let start = 0; start < hexi.length; start += 2) {
+            const number = parseInt(hexi.substr(start, 2), 16);
+            //_array.push(number);
+            _view[_view_index++] = number;
         }
 
-        return new Uint8Array(_array);
+        return _array;
     }
-};
+
+    /**
+     * Convert hex string to Bytes (ArrayBuffer)
+     *
+     * @param {String} hexi
+     * @return {ArrayBuffer}
+     */
+    static hex2Bytes(hexi){
+        return X25519._hexToBytes(hexi);
+    }
+}
+
+// const a = X25519.create('0');
+
+/** test **/
+const a = X25519.create("77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a");
+const secret = X25519.hex2Bytes("77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a");
+
+
+module.exports = X25519;

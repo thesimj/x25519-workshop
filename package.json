@@ -21,7 +21,10 @@
   },
   "homepage": "https://github.com/thesimj/x25519-workshop#readme",
   "devDependencies": {
-    "ava": "^0.17.0"
+    "ava": "^0.17.0",
+    "babel": "^6.5.2",
+    "babel-eslint": "^7.1.1",
+    "eslint": "^3.13.1"
   },
   "ava": {
     "require": [
