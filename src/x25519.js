@@ -57,20 +57,55 @@ class X25519 {
      * @return {ArrayBuffer}
      * @private
      */
-    _sum(augent, addend) {
-        // shout be the same size //
-        if (augent.byteLength !== 32 || addend.byteLength !== 32) {
-            throw new Error("Arguments in sum should have the same size of byte length.");
+    _sum8(augent, addend) {
+
+        if (augent.byteLength !== addend.byteLength && augent.byteLength % 2 === 0) {
+            throw new Error('Byte length not match!');
+        }
+        const byte_len = augent.byteLength;
+
+        const _view_augent  = new Uint8Array(augent);
+        const _view_addend  = new Uint8Array(addend);
+        const _view_sum     = new Uint8Array(byte_len);
+
+        let carry = 0, value = 0, sum = 0;
+
+        for (let i = byte_len - 1; i >= 0; i--) {
+            sum = _view_augent[i] + _view_addend[i] + carry;
+            carry = sum >>> byte_len;
+
+            _view_sum[i] = sum;
         }
 
-        const _view_augent = new Uint32Array(augent);
-        const _view_addend = new Uint32Array(addend);
-        const _view_sum = new Uint32Array(4);
+        return _view_sum.buffer;
+    }
 
-        _view_sum[0] = _view_augent[0] + _view_addend[0];
-        _view_sum[1] = _view_augent[1] + _view_addend[1];
-        _view_sum[2] = _view_augent[2] + _view_addend[2];
-        _view_sum[3] = _view_augent[3] + _view_addend[3];
+    /**
+     *
+     * @param {ArrayBuffer} augent
+     * @param {ArrayBuffer} addend
+     * @return {ArrayBuffer}
+     * @private
+     */
+    _sum16(augent, addend) {
+
+        if (augent.byteLength !== addend.byteLength && augent.byteLength % 16 === 0) {
+            throw new Error('Byte length not match!');
+        }
+        const byte_len = augent.byteLength / 2 ;
+
+        const _view_augent  = new Uint16Array(augent);
+        const _view_addend  = new Uint16Array(addend);
+        const _view_sum     = new Uint16Array(byte_len);
+
+        let carry = 0, value = 0, sum = 0;
+
+        for (let i = byte_len - 1; i >= 0; i--) {
+            sum = _view_augent[i] + _view_addend[i] + carry;
+            carry = sum >>> byte_len;
+
+            _view_sum[i] = sum;
+        }
 
         return _view_sum.buffer;
     }
@@ -83,8 +118,6 @@ class X25519 {
      */
     static _bytesToHex(bytes) {
         return new Uint8Array(bytes).reduce((carry, e) => {
-            // const hex = e.toString(16);
-            // const char = hex.length === 1 ? "0" + hex : hex;
             return carry + ("00" + e.toString(16)).substr(-2, 2);
         }, "");
     }
@@ -97,23 +130,23 @@ class X25519 {
      * @private
      */
     static _hexToBytes(hexi) {
-        const len = hexi.length / 2;
+        const bytes = 2;
+        const len = hexi.length / bytes;
 
-        if (len % 2 !== 0) {
+        if (hexi.length % bytes !== 0) {
             throw Error("Hex wrong length");
         }
 
-        const _array = new ArrayBuffer(len);
-        const _view = new Uint8Array(_array);
+        const _view = new Uint8Array(len);
         let _view_index = 0;
 
-        for (let start = 0; start < hexi.length; start += 2) {
-            const number = parseInt(hexi.substr(start, 2), 16);
+        for (let start = 0; start < hexi.length; start += bytes) {
+            const number = parseInt(hexi.substr(start, bytes), 16);
             //_array.push(number);
             _view[_view_index++] = number;
         }
 
-        return _array;
+        return _view.buffer;
     }
 
     /**
@@ -122,7 +155,7 @@ class X25519 {
      * @param {String} hexi
      * @return {ArrayBuffer}
      */
-    static hex2Bytes(hexi){
+    static hex2Bytes(hexi) {
         return X25519._hexToBytes(hexi);
     }
 }
@@ -130,8 +163,20 @@ class X25519 {
 // const a = X25519.create('0');
 
 /** test **/
-const a = X25519.create("77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a");
-const secret = X25519.hex2Bytes("77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a");
+const va = X25519._hexToBytes("0101010101010101010110101111111111111111111111111111111111111111");
+const vb = X25519._hexToBytes("0101010101010101010110101111111111111111111111111111111111111111");
 
+const a = X25519.create("77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a");
+//const secret = X25519.hex2Bytes("77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a");
+const sum = X25519._bytesToHex(a._sum8(va, vb));
+console.log("sum", sum);
+
+const timer = new Date().getTime();
+
+for(let i=0; i < 1000000 ;i++){
+    a._sum16(va,vb);
+}
+
+console.log('sum time: ', new Date().getTime() - timer);
 
 module.exports = X25519;
