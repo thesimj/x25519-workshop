@@ -4,8 +4,8 @@
   "description": "Curve 25519 implemented in put JS ES2015",
   "main": "src/index.js",
   "scripts": {
-    "test": "ava test/*.test.js --verbose",
-    "watch": "ava test/*.test.js --watch"
+    "test": "ava test/*.tests.js --verbose",
+    "watch": "ava test/*.tests.js --watch"
   },
   "repository": {
     "type": "git",

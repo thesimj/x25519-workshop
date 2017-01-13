@@ -1,10 +1,12 @@
 /**
  * Created by Mykola Bubelich
  * 2017-01-09
- *
- * License: MIT
  */
+const Hexi = require('./hexi');
 
+const _X25519_ZERO = new Uint32Array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+const _X25519_ONE = new Uint32Array([1, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+const _X25519_NINE = new Uint32Array([9, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
 
 class X25519 {
     /**
@@ -13,12 +15,12 @@ class X25519 {
      * @private
      */
     constructor() {
-        this._secret = new ArrayBuffer(32);
+        this._secret = null;
     }
 
     /** Create instance
      *
-     * @param {String} seed
+     * @param {String|ArrayBuffer} seed
      * @return {X25519}
      */
     static create(seed) {
@@ -28,266 +30,210 @@ class X25519 {
             throw new Error("Seed wrong length. Should be 64 hex string");
         }
 
-        const _secret = X25519._hexToBytes(seed);
-        const _view = new Uint8Array(_secret);
+        const _secret = new Uint32Array(10); // 320 bits, 32 bytes x 10
+
+        // copy seed to secret //
+        //const x = new Uint32Array(_secret).set(new Uint32Array(Hexi.hexToBytes(seed)));
+        const sec = new Uint32Array(Hexi.hexToBytes(seed));
+        const tmp = new Uint32Array(_secret);
+
+        tmp.set(sec);
 
         // clamp //
-        _view[0] = _view[0] & 0xf8;
-        _view[31] = _view[31] & 0x7f | 0x40;
-
-        instance._secret = _secret;
+        instance._secret = this.clamp(tmp);
 
         return instance;
     }
 
     /**
-     * Get secret key
+     * Generate and return public key
      *
-     * @return {String}
+     */
+    getPublic() {
+        return this._scalarMul(this._secret, _X25519_NINE);
+    }
+
+    /**
+     *  Addition
+     *
+     * @param {Uint32Array} augent
+     * @param {Uint32Array} addend
+     * @return {Uint32Array}
+     * @private
+     */
+    _sum(augent, addend) {
+        const sum = new Uint32Array(10);
+
+        for (let i = 0; i < sum.length; i++) {
+            sum[i] = augent[i] + addend[i];
+        }
+
+        return sum;
+    }
+
+    /**
+     * Subtraction
+     *
+     * @param {Uint32Array} minuend
+     * @param {Uint32Array} subtrahend
+     * @return {Uint32Array}
+     * @private
+     */
+    _sub(minuend, subtrahend) {
+        const sub = new Uint32Array(10);
+
+        let carry = 0;
+
+        const fSub = (prefix, m, s, c, postfix) => {
+            // store carry //
+            carry = prefix + m - s + c;
+            // return result and postfix
+            return carry & postfix;
+        };
+
+        for (let i = 0; i < 10; i += 2) {
+            sub[i] = fSub(0x7ffffda, minuend[i], subtrahend[i], carry >> 25, 0x3ffffff);
+            sub[i + 1] = fSub(0x3fffffe, minuend[i + 1], subtrahend[i + 1], carry >> 26, 0x1ffffff);
+        }
+
+        // final step //
+        sub[0] += 19 * (carry >> 25);
+
+        return sub;
+    }
+
+    /**
+     *  Multiplication
+     *
+     * @param {Uint32Array} multiplier
+     * @param {Uint32Array} multiplicand
+     * @return {Uint32Array}
+     * @private
+     */
+    _mul(multiplier, multiplicand) {
+        const mul = new Uint32Array(10);
+        //
+        // const mul_matrix = [
+        //     // column 0 //
+        //     [
+        //         multiplicand[0] * multiplier[0],
+        //         multiplicand[0] * multiplier[1],
+        //         multiplicand[0] * multiplier[2],
+        //         multiplicand[0] * multiplier[3],
+        //         multiplicand[0] * multiplier[4],
+        //         multiplicand[0] * multiplier[5],
+        //         multiplicand[0] * multiplier[6],
+        //         multiplicand[0] * multiplier[7],
+        //         multiplicand[0] * multiplier[8],
+        //         multiplicand[0] * multiplier[9],
+        //     ],
+        //     [
+        //         multiplicand[1] * multiplier[9] * 38,
+        //         multiplicand[1] * multiplier[0],
+        //         multiplicand[1] * multiplier[1] * 2,
+        //         multiplicand[1] * multiplier[2],
+        //         multiplicand[1] * multiplier[3] * 2,
+        //         multiplicand[1] * multiplier[4],
+        //         multiplicand[1] * multiplier[5] * 2,
+        //         multiplicand[1] * multiplier[6],
+        //         multiplicand[1] * multiplier[7] * 2,
+        //         multiplicand[1] * multiplier[8],
+        //     ],
+        //     [
+        //         multiplicand[2] * multiplier[8] * 38,
+        //         multiplicand[2] * multiplier[9],
+        //         multiplicand[2] * multiplier[0] * 2,
+        //         multiplicand[2] * multiplier[1],
+        //         multiplicand[2] * multiplier[2] * 2,
+        //         multiplicand[2] * multiplier[3],
+        //         multiplicand[2] * multiplier[4] * 2,
+        //         multiplicand[2] * multiplier[5],
+        //         multiplicand[2] * multiplier[6] * 2,
+        //         multiplicand[2] * multiplier[7],
+        //     ]
+        // ];
+        //
+        const mult_matrix = [
+            [0, [[0, 0x01], [1, 0x01], [2, 0x01], [3, 0x01], [4, 0x01], [5, 0x01], [6, 0x01], [7, 0x01], [8, 0x01], [9, 0x01]], 0x00, 0x3ffffff],
+            [1, [[9, 0x26], [0, 0x01], [1, 0x02], [2, 0x01], [3, 0x02], [4, 0x01], [5, 0x02], [6, 0x01], [7, 0x02], [8, 0x01]], 0x1A, 0x1ffffff],
+            [2, [[8, 0x13], [9, 0x13], [0, 0x01], [1, 0x01], [2, 0x01], [3, 0x01], [4, 0x01], [5, 0x01], [6, 0x01], [7, 0x01]], 0x19, 0x3ffffff],
+            [3, [[7, 0x26], [8, 0x13], [9, 0x26], [0, 0x01], [1, 0x02], [2, 0x01], [3, 0x02], [4, 0x01], [5, 0x02], [6, 0x01]], 0x1A, 0x1ffffff],
+            [4, [[6, 0x13], [7, 0x13], [8, 0x13], [9, 0x13], [0, 0x01], [1, 0x01], [2, 0x01], [3, 0x01], [4, 0x01], [5, 0x01]], 0x19, 0x3ffffff],
+            [5, [[5, 0x01], [6, 0x01], [7, 0x01], [8, 0x01], [9, 0x01], [0, 0x01], [1, 0x01], [2, 0x01], [3, 0x01], [4, 0x01]], 0x1A, 0x1ffffff],
+            [6, [[4, 0x01], [5, 0x01], [6, 0x01], [7, 0x01], [8, 0x01], [9, 0x01], [0, 0x01], [1, 0x01], [2, 0x01], [3, 0x01]], 0x19, 0x3ffffff],
+            [7, [[3, 0x01], [4, 0x01], [5, 0x01], [6, 0x01], [7, 0x01], [8, 0x01], [9, 0x01], [0, 0x01], [1, 0x01], [2, 0x01]], 0x1A, 0x1ffffff],
+            [8, [[2, 0x01], [3, 0x01], [4, 0x01], [5, 0x01], [6, 0x01], [7, 0x01], [8, 0x01], [9, 0x01], [0, 0x01], [1, 0x01]], 0x19, 0x3ffffff],
+            [9, [[1, 0x01], [2, 0x01], [3, 0x01], [4, 0x01], [5, 0x01], [6, 0x01], [7, 0x01], [8, 0x01], [9, 0x01], [0, 0x01]], 0x1A, 0x1ffffff],
+        ];
+
+        // let carry = 0;
+        //
+        mul[0] = multiplicand[mult_matrix[0][0]] * mult_matrix[0][1][1];
+        //
+
+        return mul;
+    }
+
+    /**
+     *
+     * @param {Uint32Array} multiplier
+     * @param {Uint32Array} multiplicand
+     * @private
+     */
+    _scalarMul(multiplier, multiplicand) {
+        let t = _X25519_ONE.slice(0);
+        let u = _X25519_ZERO.slice(0);
+        let v = _X25519_ONE.slice(0);
+        let w = multiplicand.slice(0);
+
+        let ret = new Uint32Array(10);
+
+        let x = null;
+        let y = null;
+
+        let bitswap = 1;
+
+        let index = 254;
+
+        while (index-- > 2) {
+            x = this._sum(w, v);
+            v = this._sub(w, v);
+            y = this._sum(t, u);
+            u = this._sub(t, u);
+            t = this._mul(y, v);
+        }
+
+
+        return ret.buffer;
+    }
+
+    /**
+     *
+     * @param {Uint32Array} bytes
+     * @return {Uint32Array}
+     * @private
+     */
+    static clamp(bytes) {
+        bytes[0] = bytes[0] & 0xFFFFFFF8;
+        bytes[7] = bytes[7] & 0x7FFFFFFF | 0x40000000;
+
+        return bytes;
+    }
+
+
+    /**
+     * Get copy of private key
+     *
+     * @return {ArrayBuffer}
      */
     getSecret() {
-        return X25519._bytesToHex(this._secret);
-    }
-
-
-    /**
-     *
-     * @param {ArrayBuffer} augent
-     * @param {ArrayBuffer} addend
-     * @return {ArrayBuffer}
-     * @private
-     */
-    _sum8(augent, addend) {
-
-        if (augent.byteLength !== addend.byteLength && augent.byteLength % 2 === 0) {
-            throw new Error("Byte length not match!");
-        }
-        const byte_len = augent.byteLength;
-
-        const _view_augent = new Uint8Array(augent);
-        const _view_addend = new Uint8Array(addend);
-        const _view_sum = new Uint8Array(byte_len);
-
-        let carry = 0, sum = 0;
-
-        for (let i = byte_len - 1; i >= 0; i--) {
-            sum = _view_augent[i] + _view_addend[i] + carry;
-            carry = sum >>> 8;
-
-            _view_sum[i] = sum;
-        }
-
-        return _view_sum.buffer;
-    }
-
-    /**
-     *
-     * @param {ArrayBuffer} augent
-     * @param {ArrayBuffer} addend
-     * @return {ArrayBuffer}
-     * @private
-     */
-    _sum16(augent, addend) {
-
-        if (augent.byteLength !== addend.byteLength && augent.byteLength % 16 === 0) {
-            throw new Error("Byte length not match!");
-        }
-        const byte_len = augent.byteLength / 2;
-
-        const _view_augent = new Uint16Array(augent);
-        const _view_addend = new Uint16Array(addend);
-        const _view_sum = new Uint16Array(byte_len);
-
-        let carry = 0, sum = 0;
-
-        for (let i = byte_len - 1; i >= 0; i--) {
-            sum = _view_augent[i] + _view_addend[i] + carry;
-            carry = sum >>> 16;
-
-            _view_sum[i] = sum;
-        }
-
-        return _view_sum.buffer;
-    }
-
-    /**
-     *
-     * @param {ArrayBuffer} minuend
-     * @param {ArrayBuffer} subtrahend
-     * @return {ArrayBuffer}
-     * @private
-     */
-    _sub8(minuend, subtrahend) {
-
-        if (minuend.byteLength !== subtrahend.byteLength && minuend.byteLength % 2 === 0) {
-            throw new Error("Byte length not match!");
-        }
-
-        const byte_len = minuend.byteLength;
-        let _view_minuend = null;
-        let _view_subtrahend = null;
-
-        /** compare numbers, and swap if needed **/
-        if (this._compare(minuend, subtrahend) > 0) {
-            _view_minuend = new Uint8Array(minuend);
-            _view_subtrahend = new Uint8Array(subtrahend);
-        } else {
-            _view_minuend = new Uint8Array(subtrahend);
-            _view_subtrahend = new Uint8Array(minuend);
-        }
-
-        const _view_sub = new Uint8Array(byte_len);
-
-        let borrow = 0, sub = 0;
-
-        for (let i = byte_len - 1; i >= 0; i--) {
-            sub = _view_minuend[i] - _view_subtrahend[i] - borrow;
-            borrow = (sub >> 8) & 0x01;
-            _view_sub[i] = sub;
-        }
-
-        return _view_sub.buffer;
-    }
-
-    /**
-     *
-     * @param {ArrayBuffer} multiplier
-     * @param {ArrayBuffer} multiplicand
-     * @return {ArrayBuffer}
-     * @private
-     */
-    _mul8(multiplier, multiplicand) {
-
-        if (multiplier.byteLength !== multiplicand.byteLength && multiplier.byteLength % 2 === 0) {
-            throw new Error("Byte length not match!");
-        }
-
-        const byte_len = multiplier.byteLength;
-        let _view_multiplier = new Uint8Array(multiplier);
-        let _view_multiplicand = new Uint8Array(multiplicand);
-
-        const _view_prod = new Uint8Array(byte_len);
-
-        let carry = 0, product = new Uint16Array(2), prev = 0;
-
-        product[0] = _view_multiplier[0] * _view_multiplicand[0];
-        product[1] = _view_multiplier[0] * _view_multiplicand[1] + _view_multiplier[1] * _view_multiplicand[0];
-
-        // for (let i = byte_len - 1; i >= 0; i--) {
-        // sub = _view_minuend[i] - _view_subtrahend[i] - borrow;
-        // borrow = (sub >> 8) & 0x01;
-        // _view_sub[i] = sub;
-
-        // product = _view_multiplier[i] * _view_multiplicand[i] + carry;
-        // carry = (0 | (product / 0x10));
-        // prev = product & 0xFF;
-
-        // _view_prod[i] = product;
-        // }
-
-
-        return _view_prod.buffer;
-    }
-
-    /**
-     *
-     * @param {ArrayBuffer} first
-     * @param {ArrayBuffer} second
-     * @return {Number}
-     * @private
-     */
-    _compare(first, second) {
-        if (first.byteLength !== second.byteLength && first.byteLength % 2 === 0) {
-            throw new Error("Byte length not match!");
-        }
-        const view_first = new Uint8Array(first);
-        const view_second = new Uint8Array(second);
-        let result = 0, f = 0, s = 0;
-
-        for (let i = 0; i < first.byteLength; i++) {
-            f = view_first[i];
-            s = view_second[i];
-
-            result += (f - s) * (1 - result * result);
-        }
-
-        if (result !== 0) {
-            result = result > 0 ? 1 : -1;
-        }
-
-        return result;
-    }
-
-    /**
-     *
-     * @param {ArrayBuffer} bytes
-     * @returns {String}
-     * @private
-     */
-    static _bytesToHex(bytes) {
-        return new Uint8Array(bytes).reduce((carry, e) => {
-            return carry + ("00" + e.toString(16)).substr(-2, 2);
-        }, "");
-    }
-
-    /**
-     * Convert hex string to Bytes (ArrayBuffer)
-     *
-     * @param {String} hexi
-     * @return {ArrayBuffer}
-     * @private
-     */
-    static _hexToBytes(hexi) {
-        const bytes = 2;
-        const len = hexi.length / bytes;
-
-        if (hexi.length % bytes !== 0) {
-            throw Error("Hex wrong length");
-        }
-
-        const _view = new Uint8Array(len);
-        let _view_index = 0;
-
-        for (let start = 0; start < hexi.length; start += bytes) {
-            const number = parseInt(hexi.substr(start, bytes), 16);
-            //_array.push(number);
-            _view[_view_index++] = number;
-        }
-
-        return _view.buffer;
-    }
-
-    /**
-     * Convert hex string to Bytes (ArrayBuffer)
-     *
-     * @param {String} hexi
-     * @return {ArrayBuffer}
-     */
-    static hex2Bytes(hexi) {
-        return X25519._hexToBytes(hexi);
+        return this._secret.slice(0).buffer;
     }
 }
 
-// const a = X25519.create('0');
+const x = X25519.create("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
-/** test **/
-const va = X25519._hexToBytes("0202");
-const vb = X25519._hexToBytes("0202");
-
-const a = X25519.create("77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a");
-
-//const secret = X25519.hex2Bytes("77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a");
-const res = X25519._bytesToHex(a._mul8(va, vb));
-
-console.log("compare", a._compare(va, vb));
-console.log("sub", res);
-
-const timer = new Date().getTime();
-
-// for(let i=0; i < 1000000 ;i++){
-//     a._sum16(va,vb);
-// }
-
-console.log('sum time: ', new Date().getTime() - timer);
+console.log(Hexi.bytesToHex(x.getSecret()));
+console.log(Hexi.bytesToHex(x.getPublic()));
 
 module.exports = X25519;
