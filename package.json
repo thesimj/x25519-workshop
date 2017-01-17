@@ -1,25 +1,30 @@
 {
   "name": "x25519-workshop",
-  "version": "0.0.1",
-  "description": "Curve 25519 implemented in put JS ES2015",
-  "main": "src/index.js",
+  "version": "0.1.0",
+  "description": "Pure JS ES2015 Implementaion of the Curve25519 Diffie-Hellman function",
+  "main": "src/x25519.js",
   "scripts": {
     "test": "ava test/*.tests.js --verbose",
-    "watch": "ava test/*.tests.js --watch"
+    "watch": "ava test/*.tests.js --watch --verbose"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/thesimj/x25519-workshop.git"
   },
   "keywords": [
-    "curve25519"
+    "curve25519",
+    "ed25519",
+    "eliptic curve",
+    "diffie hellman",
+    "key exchange",
+    "ecdh"
   ],
   "author": "Mykola Bubelich",
   "license": "MIT",
   "bugs": {
     "url": "https://github.com/thesimj/x25519-workshop/issues"
   },
-  "homepage": "https://github.com/thesimj/x25519-workshop#readme",
+  "homepage": "https://github.com/thesimj/x25519-workshop",
   "devDependencies": {
     "ava": "^0.17.0",
     "babel": "^6.5.2",

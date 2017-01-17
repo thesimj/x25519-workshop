@@ -1,239 +1,366 @@
+"use strict";
 /**
  * Created by Mykola Bubelich
- * 2017-01-09
+ * Pure JS ES2015 Implementaion of the Curve25519 Diffie-Hellman function
+ *
+ * Inspired by TeetNacl
+ *
+ * More information
+ * https://github.com/thesimj/x25519-workshop
+ *
+ * References
+ * TweetNaCl 20140427 - http://tweetnacl.cr.yp.to/
+ * TweetNaCl.js v0.14.5 - https://github.com/dchest/tweetnacl-js
+ *
  */
+
 const Hexi = require('./hexi');
 
-const _X25519_ZERO = new Uint32Array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-const _X25519_ONE = new Uint32Array([1, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-const _X25519_NINE = new Uint32Array([9, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+const _X25519_ZERO = new Float64Array([0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000]);
+const _X25519_ONE = new Float64Array([0x0001, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000]);
+const _X25519_NINE = new Uint8Array(32);
+const _X25519_121665 = new Float64Array([0xDB41, 0x0001, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000]);
+
+_X25519_NINE[0] = 9;
 
 class X25519 {
     /**
-     * Default constructor
-     *
-     * @private
+     * *********************
+     * PUBLIC STATIC METHOD
+     * *********************
      */
-    constructor() {
-        this._secret = null;
-    }
 
-    /** Create instance
+    /**
+     * Generate and return public key as Uint8Array[32] array
      *
-     * @param {String|ArrayBuffer} seed
-     * @return {X25519}
+     * @param {Uint8Array} secret
+     * @return {Uint8Array}
      */
-    static create(seed) {
-        const instance = new X25519();
+    static getPublic(secret) {
 
-        if (seed.length !== 64) {
-            throw new Error("Seed wrong length. Should be 64 hex string");
+        if (secret.byteLength !== 32) {
+            throw new Error("Secret wrong length, should be 32 bytes.");
         }
 
-        const _secret = new Uint32Array(10); // 320 bits, 32 bytes x 10
+        const p = new Uint8Array(secret);
+        X25519._clamp(p);
 
-        // copy seed to secret //
-        //const x = new Uint32Array(_secret).set(new Uint32Array(Hexi.hexToBytes(seed)));
-        const sec = new Uint32Array(Hexi.hexToBytes(seed));
-        const tmp = new Uint32Array(_secret);
-
-        tmp.set(sec);
-
-        // clamp //
-        instance._secret = this.clamp(tmp);
-
-        return instance;
+        return X25519._scalarMul(p, _X25519_NINE);
     }
 
     /**
-     * Generate and return public key
+     * Generate shared key from secret and public key
+     * Length is 32 bytes for every key
      *
+     * @param {Uint8Array} secretKey
+     * @param {Uint8Array} publicKey
+     * @return {Uint8Array}
      */
-    getPublic() {
-        return this._scalarMul(this._secret, _X25519_NINE);
+    static getSharedKey(secretKey, publicKey) {
+
+        if (secretKey.byteLength !== 32 || publicKey.byteLength !== 32) {
+            throw new Error("Secret key or public key wrong length, should be 32 bytes.");
+        }
+
+        const p = new Uint8Array(secretKey);
+        X25519._clamp(p);
+
+        return X25519._scalarMul(p, publicKey);
     }
+
+    /**
+     * **********************
+     * PRIVATE STATIC METHOD
+     * **********************
+     */
 
     /**
      *  Addition
      *
-     * @param {Uint32Array} augent
-     * @param {Uint32Array} addend
-     * @return {Uint32Array}
+     * @param {Float64Array} result
+     * @param {Float64Array} augent
+     * @param {Float64Array} addend
      * @private
      */
-    _sum(augent, addend) {
-        const sum = new Uint32Array(10);
-
-        for (let i = 0; i < sum.length; i++) {
-            sum[i] = augent[i] + addend[i];
+    static _add(result, augent, addend) {
+        for (let i = 0; i < 16; i++) {
+            result[i] = (augent[i] + addend[i]) | 0;
         }
-
-        return sum;
     }
 
     /**
      * Subtraction
      *
-     * @param {Uint32Array} minuend
-     * @param {Uint32Array} subtrahend
-     * @return {Uint32Array}
+     * @param {Float64Array} result
+     * @param {Float64Array} minuend
+     * @param {Float64Array} subtrahend
      * @private
      */
-    _sub(minuend, subtrahend) {
-        const sub = new Uint32Array(10);
-
-        let carry = 0;
-
-        const fSub = (prefix, m, s, c, postfix) => {
-            // store carry //
-            carry = prefix + m - s + c;
-            // return result and postfix
-            return carry & postfix;
-        };
-
-        for (let i = 0; i < 10; i += 2) {
-            sub[i] = fSub(0x7ffffda, minuend[i], subtrahend[i], carry >> 25, 0x3ffffff);
-            sub[i + 1] = fSub(0x3fffffe, minuend[i + 1], subtrahend[i + 1], carry >> 26, 0x1ffffff);
+    static _sub(result, minuend, subtrahend) {
+        for (let i = 0; i < 16; i++) {
+            result[i] = (minuend[i] - subtrahend[i]) | 0;
         }
-
-        // final step //
-        sub[0] += 19 * (carry >> 25);
-
-        return sub;
     }
 
     /**
      *  Multiplication
      *
-     * @param {Uint32Array} multiplier
-     * @param {Uint32Array} multiplicand
-     * @return {Uint32Array}
+     * @param {Float64Array} result
+     * @param {Float64Array} multiplier
+     * @param {Float64Array} multiplicand
      * @private
      */
-    _mul(multiplier, multiplicand) {
-        const mul = new Uint32Array(10);
-        //
-        // const mul_matrix = [
-        //     // column 0 //
-        //     [
-        //         multiplicand[0] * multiplier[0],
-        //         multiplicand[0] * multiplier[1],
-        //         multiplicand[0] * multiplier[2],
-        //         multiplicand[0] * multiplier[3],
-        //         multiplicand[0] * multiplier[4],
-        //         multiplicand[0] * multiplier[5],
-        //         multiplicand[0] * multiplier[6],
-        //         multiplicand[0] * multiplier[7],
-        //         multiplicand[0] * multiplier[8],
-        //         multiplicand[0] * multiplier[9],
-        //     ],
-        //     [
-        //         multiplicand[1] * multiplier[9] * 38,
-        //         multiplicand[1] * multiplier[0],
-        //         multiplicand[1] * multiplier[1] * 2,
-        //         multiplicand[1] * multiplier[2],
-        //         multiplicand[1] * multiplier[3] * 2,
-        //         multiplicand[1] * multiplier[4],
-        //         multiplicand[1] * multiplier[5] * 2,
-        //         multiplicand[1] * multiplier[6],
-        //         multiplicand[1] * multiplier[7] * 2,
-        //         multiplicand[1] * multiplier[8],
-        //     ],
-        //     [
-        //         multiplicand[2] * multiplier[8] * 38,
-        //         multiplicand[2] * multiplier[9],
-        //         multiplicand[2] * multiplier[0] * 2,
-        //         multiplicand[2] * multiplier[1],
-        //         multiplicand[2] * multiplier[2] * 2,
-        //         multiplicand[2] * multiplier[3],
-        //         multiplicand[2] * multiplier[4] * 2,
-        //         multiplicand[2] * multiplier[5],
-        //         multiplicand[2] * multiplier[6] * 2,
-        //         multiplicand[2] * multiplier[7],
-        //     ]
-        // ];
-        //
-        const mult_matrix = [
-            [0, [[0, 0x01], [1, 0x01], [2, 0x01], [3, 0x01], [4, 0x01], [5, 0x01], [6, 0x01], [7, 0x01], [8, 0x01], [9, 0x01]], 0x00, 0x3ffffff],
-            [1, [[9, 0x26], [0, 0x01], [1, 0x02], [2, 0x01], [3, 0x02], [4, 0x01], [5, 0x02], [6, 0x01], [7, 0x02], [8, 0x01]], 0x1A, 0x1ffffff],
-            [2, [[8, 0x13], [9, 0x13], [0, 0x01], [1, 0x01], [2, 0x01], [3, 0x01], [4, 0x01], [5, 0x01], [6, 0x01], [7, 0x01]], 0x19, 0x3ffffff],
-            [3, [[7, 0x26], [8, 0x13], [9, 0x26], [0, 0x01], [1, 0x02], [2, 0x01], [3, 0x02], [4, 0x01], [5, 0x02], [6, 0x01]], 0x1A, 0x1ffffff],
-            [4, [[6, 0x13], [7, 0x13], [8, 0x13], [9, 0x13], [0, 0x01], [1, 0x01], [2, 0x01], [3, 0x01], [4, 0x01], [5, 0x01]], 0x19, 0x3ffffff],
-            [5, [[5, 0x01], [6, 0x01], [7, 0x01], [8, 0x01], [9, 0x01], [0, 0x01], [1, 0x01], [2, 0x01], [3, 0x01], [4, 0x01]], 0x1A, 0x1ffffff],
-            [6, [[4, 0x01], [5, 0x01], [6, 0x01], [7, 0x01], [8, 0x01], [9, 0x01], [0, 0x01], [1, 0x01], [2, 0x01], [3, 0x01]], 0x19, 0x3ffffff],
-            [7, [[3, 0x01], [4, 0x01], [5, 0x01], [6, 0x01], [7, 0x01], [8, 0x01], [9, 0x01], [0, 0x01], [1, 0x01], [2, 0x01]], 0x1A, 0x1ffffff],
-            [8, [[2, 0x01], [3, 0x01], [4, 0x01], [5, 0x01], [6, 0x01], [7, 0x01], [8, 0x01], [9, 0x01], [0, 0x01], [1, 0x01]], 0x19, 0x3ffffff],
-            [9, [[1, 0x01], [2, 0x01], [3, 0x01], [4, 0x01], [5, 0x01], [6, 0x01], [7, 0x01], [8, 0x01], [9, 0x01], [0, 0x01]], 0x1A, 0x1ffffff],
-        ];
+    static _mul(result, multiplier, multiplicand) {
+        var i, j, carry = new Float64Array(31);
 
-        // let carry = 0;
-        //
-        mul[0] = multiplicand[mult_matrix[0][0]] * mult_matrix[0][1][1];
-        //
-
-        return mul;
-    }
-
-    /**
-     *
-     * @param {Uint32Array} multiplier
-     * @param {Uint32Array} multiplicand
-     * @private
-     */
-    _scalarMul(multiplier, multiplicand) {
-        let t = _X25519_ONE.slice(0);
-        let u = _X25519_ZERO.slice(0);
-        let v = _X25519_ONE.slice(0);
-        let w = multiplicand.slice(0);
-
-        let ret = new Uint32Array(10);
-
-        let x = null;
-        let y = null;
-
-        let bitswap = 1;
-
-        let index = 254;
-
-        while (index-- > 2) {
-            x = this._sum(w, v);
-            v = this._sub(w, v);
-            y = this._sum(t, u);
-            u = this._sub(t, u);
-            t = this._mul(y, v);
+        for (i = 0; i < 16; i++) {
+            for (j = 0; j < 16; j++) {
+                carry[i + j] += multiplier[i] * multiplicand[j];
+            }
         }
 
+        /** mul 2 x 19 **/
+        for (i = 0; i < 15; i++) {
+            carry[i] += 38 * carry[i + 16];
+        }
 
-        return ret.buffer;
+        X25519._car25519(carry);
+        X25519._car25519(carry);
+
+        /** copy results **/
+        X25519._copy(result, carry);
     }
 
     /**
+     * Compute values^2
      *
-     * @param {Uint32Array} bytes
-     * @return {Uint32Array}
+     * @param {Float64Array} result
+     * @param {Float64Array} values
      * @private
      */
-    static clamp(bytes) {
-        bytes[0] = bytes[0] & 0xFFFFFFF8;
-        bytes[7] = bytes[7] & 0x7FFFFFFF | 0x40000000;
-
-        return bytes;
+    static _sqr(result, values) {
+        X25519._mul(result, values, values);
     }
-
 
     /**
-     * Get copy of private key
+     * Core scalar multiplies for curve 25519
      *
-     * @return {ArrayBuffer}
+     * @param {Uint8Array} multiplier; 32 bytes array
+     * @param {Uint8Array} multiplicand; 32 bytes array
+     * @private
      */
-    getSecret() {
-        return this._secret.slice(0).buffer;
+    static _scalarMul(multiplier, multiplicand) {
+        const carry = new Float64Array(80);
+
+        const a = new Float64Array(_X25519_ONE);
+        const b = new Float64Array(_X25519_ZERO);
+        const c = new Float64Array(_X25519_ZERO);
+        const d = new Float64Array(_X25519_ONE);
+        const e = new Float64Array(_X25519_ZERO);
+        const f = new Float64Array(_X25519_ZERO);
+
+        const z = new Uint8Array(multiplier);
+
+        let r = 0, i = 0;
+
+        X25519._unpack(carry, multiplicand);
+
+        // copy carry to b //
+        X25519._copy(b, carry);
+
+        for (i = 254; i >= 0; --i) {
+            r = (z[i >>> 3] >>> (i & 7)) & 1;
+
+            X25519._sel25519(a, b, r);
+            X25519._sel25519(c, d, r);
+
+            X25519._add(e, a, c);
+            X25519._sub(a, a, c);
+
+            X25519._add(c, b, d);
+            X25519._sub(b, b, d);
+
+            X25519._sqr(d, e);
+            X25519._sqr(f, a);
+
+            X25519._mul(a, c, a);
+            X25519._mul(c, b, e);
+
+            X25519._add(e, a, c);
+            X25519._sub(a, a, c);
+
+            X25519._sqr(b, a);
+            X25519._sub(c, d, f);
+
+            X25519._mul(a, c, _X25519_121665);
+            X25519._add(a, a, d);
+
+            X25519._mul(c, c, a);
+            X25519._mul(a, d, f);
+            X25519._mul(d, b, carry);
+
+            X25519._sqr(b, e);
+
+            X25519._sel25519(a, b, r);
+            X25519._sel25519(c, d, r);
+        }
+
+        for (i = 0; i < 16; i++) {
+            carry[i + 16] = a[i];
+            carry[i + 32] = c[i];
+            carry[i + 48] = b[i];
+            carry[i + 64] = d[i];
+        }
+
+        const x32 = carry.subarray(32);
+        const x16 = carry.subarray(16);
+
+        X25519._inv25519(x32, x32);
+        X25519._mul(x16, x16, x32);
+
+        const result = new Uint8Array(32);
+
+        X25519._pack(result, x16);
+
+        return result;
+    }
+
+    /**
+     *
+     * @param {Float64Array} result
+     * @param {Float64Array} values
+     * @private
+     */
+    static _inv25519(result, values) {
+        const carry = new Float64Array(16);
+        let i = 0;
+
+        // copy values to carry //
+        X25519._copy(carry, values);
+
+        // compute //
+        for (i = 253; i >= 0; i--) {
+            X25519._sqr(carry, carry);
+            if (i !== 2 && i !== 4) {
+                X25519._mul(carry, carry, values);
+            }
+        }
+
+        // copy carry to results //
+        X25519._copy(result, carry);
+    }
+
+    /**
+     *
+     * @param {Float64Array} result
+     * @param {Float64Array} q
+     * @param {Number} b
+     * @private
+     */
+    static _sel25519(result, q, b) {
+        let tmp, carry = ~(b - 1);
+
+        // compute //
+        for (let i = 0; i < 16; i++) {
+            tmp = carry & (result[i] ^ q[i]);
+            result[i] ^= tmp;
+            q[i] ^= tmp;
+        }
+    }
+
+    /**
+     *
+     * @param {Float64Array} values
+     * @private
+     */
+    static _car25519(values) {
+        let carry = 0;
+
+        for (let i = 0; i < 16; i++) {
+            values[i] += 65536;
+            carry = Math.floor(values[i] / 65536);
+            values[(i + 1) * (i < 15 ? 1 : 0)] += carry - 1 + 37 * (carry - 1) * (i === 15 ? 1 : 0);
+            values[i] -= (carry * 65536);
+        }
+    }
+
+    /**
+     * Upack 1x32 -> 8x16 bytes arrays
+     *
+     * @param {Float64Array} result
+     * @param {Uint8Array} values
+     * @private
+     */
+    static _unpack(result, values) {
+        for (let i = 0; i < 16; i++) {
+            result[i] = values[2 * i] + (values[2 * i + 1] << 8);
+        }
+    }
+
+    /**
+     * Pack from 8x16 -> 1x32 bytes array
+     *
+     * @param {Float64Array} result
+     * @param {Float64Array} values
+     * @private
+     */
+    static _pack(result, values) {
+        const m = new Float64Array(16), tmp = new Float64Array(16);
+        let i, j, carry;
+
+        // copy //
+        X25519._copy(tmp, values);
+
+        X25519._car25519(tmp);
+        X25519._car25519(tmp);
+        X25519._car25519(tmp);
+
+        for (j = 0; j < 2; j++) {
+            m[0] = tmp[0] - 0xFFED;
+
+            for (i = 1; i < 15; i++) {
+                m[i] = tmp[i] - 0xFFFF - ((m[i - 1] >> 16) & 1);
+                m[i - 1] &= 0xFFFF;
+            }
+
+            m[15] = tmp[15] - 0x7FFF - ((m[14] >> 16) & 1);
+            carry = (m[15] >> 16) & 1;
+            m[14] &= 0xFFFF;
+
+            X25519._sel25519(tmp, m, 1 - carry)
+        }
+
+        for (i = 0; i < 16; i++) {
+            result[2 * i] = tmp[i] & 0xFF;
+            result[2 * i + 1] = tmp[i] >> 8;
+        }
+    }
+
+    /**
+     * Copy source to destination
+     * Warning! length not checked!
+     *
+     * @param {Float64Array} destination
+     * @param {Float64Array} source
+     * @private
+     */
+    static _copy(destination, source) {
+        const len = source.length;
+        for (let i = 0; i < len; i++) {
+            destination[i] = source[i];
+        }
+    }
+
+    /**
+     * Curve 25516 clamp input seed bytes
+     *
+     * @param {Uint8Array} bytes
+     * @private
+     */
+    static _clamp(bytes) {
+        bytes[0] = bytes[0] & 0xF8;
+        bytes[31] = (bytes[31] & 0x7F) | 0x40;
     }
 }
-
-const x = X25519.create("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
-
-console.log(Hexi.bytesToHex(x.getSecret()));
-console.log(Hexi.bytesToHex(x.getPublic()));
 
 module.exports = X25519;

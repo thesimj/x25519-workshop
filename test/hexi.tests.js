@@ -1,6 +1,8 @@
+"use strict";
+
 /**
  * Created by Mykola Bubelich
- * 2017-01-13.
+ * 2017-01-13
  */
 
 const test = require("ava");
@@ -50,7 +52,7 @@ test("convert from string to hex", t => {
         const hex = t_vectors.hex[i];
         const bytes = t_vectors.bytes[i];
 
-        t.true(Hexi.equal(Hexi.hexToBytes(hex), bytes.buffer));
+        t.true(Hexi.equal(Hexi.hexToBytes(hex), bytes));
     }
 });
 
@@ -66,16 +68,16 @@ test("convert from bytes to string", t => {
 test("compare two bytes arrays should return true", t => {
     // compare equals
     for (const bytes of t_vectors.bytes) {
-        t.true(Hexi.equal(bytes.buffer, bytes.buffer));
+        t.true(Hexi.equal(bytes, bytes));
     }
 
     // compare not equals
     for (const bytes of t_vectors.bytes) {
 
-        const two = bytes.slice(0);
+        const two = new Uint8Array(bytes);
         two[0] = 0xAB;
 
-        t.false(Hexi.equal(bytes.buffer, two.buffer));
+        t.false(Hexi.equal(bytes, two));
     }
 });
 

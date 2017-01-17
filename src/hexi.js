@@ -12,7 +12,7 @@ class Hexi {
      * Convert hex string to bytes (ArrayBuffer)
      *
      * @param {String} hex
-     * @return {ArrayBuffer}
+     * @return {Uint8Array}
      */
     static hexToBytes(hex) {
         if (typeof hex !== "string") {
@@ -30,13 +30,13 @@ class Hexi {
             buff[index++] = parseInt(hex.substr(start, 2), 16);
         }
 
-        return buff.buffer;
+        return buff;
     }
 
     /**
      * Convert bytes to hex string
      *
-     * @param {ArrayBuffer} bytes
+     * @param {Uint8Array} bytes
      * @return {String}
      */
     static bytesToHex(bytes) {
@@ -49,8 +49,8 @@ class Hexi {
      * Compare two bytes arrays
      * Compare time is constant and depends only on arrays length
      *
-     * @param {ArrayBuffer} one
-     * @param {ArrayBuffer} two
+     * @param {Uint8Array} one
+     * @param {Uint8Array} two
      * @return {Boolean}
      */
     static equal(one, two) {
@@ -60,11 +60,8 @@ class Hexi {
             return false;
         }
 
-        const w_one = new Uint8Array(one);
-        const w_two = new Uint8Array(two);
-
         for (let i = 0; i < one.byteLength; i++) {
-            eq += (w_one[i] != w_two[i]);
+            eq += (one[i] != two[i]);
         }
 
         return eq == 0;
