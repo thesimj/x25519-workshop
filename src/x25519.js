@@ -13,9 +13,6 @@
  * TweetNaCl.js v0.14.5 - https://github.com/dchest/tweetnacl-js
  *
  */
-
-const Hexi = require('./hexi');
-
 const _X25519_ZERO = new Float64Array([0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000]);
 const _X25519_ONE = new Float64Array([0x0001, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000]);
 const _X25519_NINE = new Uint8Array(32);
@@ -363,4 +360,6 @@ class X25519 {
     }
 }
 
-module.exports = X25519;
+if (typeof module !== 'undefined') {
+    module.exports = X25519;
+}

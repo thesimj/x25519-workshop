@@ -68,4 +68,7 @@ class Hexi {
     }
 }
 
-module.exports = Hexi;
+// Export //
+if (typeof module !== 'undefined') {
+    module.exports = Hexi;
+}
